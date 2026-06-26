@@ -45,6 +45,8 @@ npm run dev
 
 `http://localhost:3000/dashboard`
 
+> 如果 MySQL 暂不可用，服务会自动进入 Demo Mode，`/dashboard` 仍可访问并展示内置模拟数据。
+
 ## 2. 数据模型
 
 - `merchants`：商户主数据（状态、风险等级）

@@ -6,9 +6,30 @@ const { initializeDatabase, query } = require("./config/db");
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
+let databaseReady = false;
 
 app.use(express.json());
 app.use("/static", express.static(path.join(__dirname, "../public")));
+app.use("/api", (req, res, next) => {
+  if (databaseReady) {
+    return next();
+  }
+
+  const isDashboardGet =
+    req.method === "GET" &&
+    (req.path === "/dashboard/platform" ||
+      req.path === "/dashboard/merchants" ||
+      req.path.startsWith("/dashboard/merchants/"));
+
+  if (isDashboardGet) {
+    return next();
+  }
+
+  return res.status(503).json({
+    error:
+      "Database is unavailable. Demo dashboard mode is enabled at /dashboard.",
+  });
+});
 
 app.get("/", (_req, res) => {
   res.json({
@@ -19,6 +40,7 @@ app.get("/", (_req, res) => {
 app.get("/health", (_req, res) => {
   res.json({
     status: "ok",
+    database: databaseReady ? "connected" : "demo-mode",
   });
 });
 
@@ -124,6 +146,140 @@ function parseDateRange(req, res) {
   return { startDate, endDate };
 }
 
+const DEMO_MERCHANTS = [
+  {
+    id: 1,
+    merchant_code: "M1001",
+    name: "Nebula Shop",
+    status: "active",
+    risk_level: "medium",
+    created_at: "2026-05-01 10:00:00",
+    kpi: {
+      totalTransactionOrders: 45210,
+      successfulPayments: 43030,
+      failedPayments: 2180,
+      gmv: 8580120.8,
+      totalRefunds: 902,
+      refundAmount: 438250.6,
+      totalChargebacks: 212,
+      chargebackAmount: 101850.9,
+      totalFraudCases: 96,
+    },
+  },
+  {
+    id: 2,
+    merchant_code: "M1002",
+    name: "Atlas Travel",
+    status: "active",
+    risk_level: "high",
+    created_at: "2026-05-06 12:00:00",
+    kpi: {
+      totalTransactionOrders: 36680,
+      successfulPayments: 29380,
+      failedPayments: 7300,
+      gmv: 6123580.3,
+      totalRefunds: 2480,
+      refundAmount: 593010.4,
+      totalChargebacks: 740,
+      chargebackAmount: 351200.6,
+      totalFraudCases: 420,
+    },
+  },
+  {
+    id: 3,
+    merchant_code: "M1003",
+    name: "Zenith Digital",
+    status: "active",
+    risk_level: "high",
+    created_at: "2026-05-12 09:40:00",
+    kpi: {
+      totalTransactionOrders: 28490,
+      successfulPayments: 22920,
+      failedPayments: 5570,
+      gmv: 4172540.0,
+      totalRefunds: 1380,
+      refundAmount: 245680.2,
+      totalChargebacks: 480,
+      chargebackAmount: 126200.0,
+      totalFraudCases: 315,
+    },
+  },
+  {
+    id: 4,
+    merchant_code: "M1004",
+    name: "Luna Market",
+    status: "active",
+    risk_level: "low",
+    created_at: "2026-05-15 16:15:00",
+    kpi: {
+      totalTransactionOrders: 18160,
+      successfulPayments: 17470,
+      failedPayments: 690,
+      gmv: 2940730.45,
+      totalRefunds: 290,
+      refundAmount: 67220.9,
+      totalChargebacks: 45,
+      chargebackAmount: 10022.4,
+      totalFraudCases: 16,
+    },
+  },
+];
+
+function getDemoMerchantRows() {
+  return DEMO_MERCHANTS.map((merchant) => ({
+    id: merchant.id,
+    merchant_code: merchant.merchant_code,
+    name: merchant.name,
+    status: merchant.status,
+    risk_level: merchant.risk_level,
+    created_at: merchant.created_at,
+    dashboard: buildDashboardSummary(merchant.kpi),
+  }));
+}
+
+function getDemoPlatformPayload(range) {
+  const merchants = getDemoMerchantRows();
+  const aggregateKpi = merchants.reduce(
+    (acc, merchant) => ({
+      totalTransactionOrders:
+        acc.totalTransactionOrders + merchant.dashboard.totalTransactionOrders,
+      successfulPayments:
+        acc.successfulPayments + merchant.dashboard.successfulPayments,
+      failedPayments: acc.failedPayments + merchant.dashboard.failedPayments,
+      gmv: acc.gmv + merchant.dashboard.gmv,
+      totalRefunds: acc.totalRefunds + merchant.dashboard.totalRefunds,
+      refundAmount: acc.refundAmount + merchant.dashboard.refundAmount,
+      totalChargebacks: acc.totalChargebacks + merchant.dashboard.totalChargebacks,
+      chargebackAmount:
+        acc.chargebackAmount + merchant.dashboard.chargebackAmount,
+      totalFraudCases: acc.totalFraudCases + merchant.dashboard.totalFraudCases,
+    }),
+    {
+      totalTransactionOrders: 0,
+      successfulPayments: 0,
+      failedPayments: 0,
+      gmv: 0,
+      totalRefunds: 0,
+      refundAmount: 0,
+      totalChargebacks: 0,
+      chargebackAmount: 0,
+      totalFraudCases: 0,
+    },
+  );
+
+  return {
+    timeframe: range,
+    merchantCoverage: {
+      totalMerchants: merchants.length,
+      activeMerchants: merchants.filter((x) => x.status === "active").length,
+      transactingMerchants: merchants.filter(
+        (x) => x.dashboard.successfulPayments > 0,
+      ).length,
+    },
+    dashboard: buildDashboardSummary(aggregateKpi),
+  };
+}
+
 async function getMerchantById(merchantId) {
   const rows = await query(
     "SELECT id, merchant_code, name, status, risk_level, created_at FROM merchants WHERE id = ?",
@@ -208,7 +364,7 @@ async function getMerchantKpi({ merchantId = null, startDate = null, endDate = n
   );
 
   const fraudParams = [];
-  let fraudWhere = " WHERE status = 'confirmed_fraud'";
+  let fraudWhere = " WHERE 1=1";
   if (merchantId) {
     fraudWhere += " AND merchant_id = ?";
     fraudParams.push(merchantId);
@@ -606,6 +762,10 @@ app.get("/api/dashboard/platform", async (req, res) => {
     return;
   }
 
+  if (!databaseReady) {
+    return res.json(getDemoPlatformPayload(range));
+  }
+
   try {
     const kpi = await getMerchantKpi(range);
     const coverageRows = await query(
@@ -653,6 +813,13 @@ app.get("/api/dashboard/merchants", async (req, res) => {
     return;
   }
 
+  if (!databaseReady) {
+    return res.json({
+      timeframe: range,
+      merchants: getDemoMerchantRows(),
+    });
+  }
+
   try {
     const merchants = await query(
       `
@@ -693,6 +860,26 @@ app.get("/api/dashboard/merchants/:merchantId", async (req, res) => {
     return res.status(400).json({ error: "merchantId must be a positive integer." });
   }
 
+  if (!databaseReady) {
+    const merchants = getDemoMerchantRows();
+    const merchant = merchants.find((x) => x.id === merchantId);
+    if (!merchant) {
+      return res.status(404).json({ error: "Merchant not found." });
+    }
+    return res.json({
+      timeframe: range,
+      merchant: {
+        id: merchant.id,
+        merchant_code: merchant.merchant_code,
+        name: merchant.name,
+        status: merchant.status,
+        risk_level: merchant.risk_level,
+        created_at: merchant.created_at,
+      },
+      dashboard: merchant.dashboard,
+    });
+  }
+
   try {
     const merchant = await getMerchantById(merchantId);
     if (!merchant) {
@@ -718,13 +905,20 @@ app.get("/api/dashboard/merchants/:merchantId", async (req, res) => {
 async function bootstrap() {
   try {
     await initializeDatabase();
-    app.listen(port, () => {
-      console.log(`Server started on http://localhost:${port}`);
-    });
+    databaseReady = true;
   } catch (error) {
-    console.error("Failed to start application:", error.message);
-    process.exit(1);
+    databaseReady = false;
+    console.warn(
+      `Failed to initialize database (${error.message}), starting in demo mode.`,
+    );
   }
+
+  app.listen(port, () => {
+    console.log(`Server started on http://localhost:${port}`);
+    if (!databaseReady) {
+      console.log("Dashboard demo mode is active (no database connection).");
+    }
+  });
 }
 
 bootstrap();
