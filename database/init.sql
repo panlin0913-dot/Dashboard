@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS transaction_orders (
   merchant_name VARCHAR(128) NOT NULL,
   card_number_first6_last4 VARCHAR(16) NOT NULL,
   channel_name VARCHAR(64) NOT NULL,
+  mcc VARCHAR(4) NOT NULL,
   order_amount DECIMAL(18, 2) NOT NULL,
   order_currency CHAR(3) NOT NULL DEFAULT 'CNY',
   payer_email VARCHAR(120) NOT NULL,
@@ -37,6 +38,9 @@ CREATE TABLE IF NOT EXISTS transaction_orders (
     FOREIGN KEY (merchant_id) REFERENCES merchants (id)
     ON UPDATE CASCADE ON DELETE RESTRICT
 );
+
+ALTER TABLE transaction_orders
+  ADD COLUMN IF NOT EXISTS mcc VARCHAR(4) NOT NULL DEFAULT '0000' AFTER channel_name;
 
 CREATE TABLE IF NOT EXISTS order_refunds (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -108,8 +112,8 @@ ON DUPLICATE KEY UPDATE
   risk_level = VALUES(risk_level);
 
 INSERT INTO transaction_orders
-  (merchant_id, order_no, merchant_name, card_number_first6_last4, channel_name, order_amount, order_currency, payer_email, payer_name, payment_status, paid_at)
-SELECT m.id, 'ORD-M1001-0001', m.name, '6222021234', 'alipay', 1280.00, 'CNY', 'alice@nebula.com', 'Alice', 'paid', CURRENT_TIMESTAMP
+  (merchant_id, order_no, merchant_name, card_number_first6_last4, channel_name, mcc, order_amount, order_currency, payer_email, payer_name, payment_status, paid_at)
+SELECT m.id, 'ORD-M1001-0001', m.name, '6222021234', 'alipay', '5411', 1280.00, 'CNY', 'alice@nebula.com', 'Alice', 'paid', CURRENT_TIMESTAMP
 FROM merchants m
 WHERE m.merchant_code = 'M1001'
 ON DUPLICATE KEY UPDATE
@@ -117,8 +121,8 @@ ON DUPLICATE KEY UPDATE
   order_amount = VALUES(order_amount);
 
 INSERT INTO transaction_orders
-  (merchant_id, order_no, merchant_name, card_number_first6_last4, channel_name, order_amount, order_currency, payer_email, payer_name, payment_status, paid_at)
-SELECT m.id, 'ORD-M1001-0002', m.name, '6228485678', 'wechat', 880.00, 'CNY', 'bob@nebula.com', 'Bob', 'paid', CURRENT_TIMESTAMP
+  (merchant_id, order_no, merchant_name, card_number_first6_last4, channel_name, mcc, order_amount, order_currency, payer_email, payer_name, payment_status, paid_at)
+SELECT m.id, 'ORD-M1001-0002', m.name, '6228485678', 'wechat', '5732', 880.00, 'CNY', 'bob@nebula.com', 'Bob', 'paid', CURRENT_TIMESTAMP
 FROM merchants m
 WHERE m.merchant_code = 'M1001'
 ON DUPLICATE KEY UPDATE
@@ -126,8 +130,8 @@ ON DUPLICATE KEY UPDATE
   order_amount = VALUES(order_amount);
 
 INSERT INTO transaction_orders
-  (merchant_id, order_no, merchant_name, card_number_first6_last4, channel_name, order_amount, order_currency, payer_email, payer_name, payment_status)
-SELECT m.id, 'ORD-M1002-0001', m.name, '4111111234', 'card', 2999.00, 'CNY', 'carol@atlas.com', 'Carol', 'failed'
+  (merchant_id, order_no, merchant_name, card_number_first6_last4, channel_name, mcc, order_amount, order_currency, payer_email, payer_name, payment_status)
+SELECT m.id, 'ORD-M1002-0001', m.name, '4111111234', 'card', '4722', 2999.00, 'CNY', 'carol@atlas.com', 'Carol', 'failed'
 FROM merchants m
 WHERE m.merchant_code = 'M1002'
 ON DUPLICATE KEY UPDATE

@@ -470,6 +470,7 @@ async function createTransactionOrder(req, res) {
     merchantName = null,
     cardNumberFirst6Last4,
     channelName,
+    mcc,
     orderAmount,
     orderCurrency = "CNY",
     payerEmail,
@@ -483,6 +484,7 @@ async function createTransactionOrder(req, res) {
     !orderNo ||
     !cardNumberFirst6Last4 ||
     !channelName ||
+    !mcc ||
     orderAmount === undefined ||
     !orderCurrency ||
     !payerEmail ||
@@ -490,7 +492,7 @@ async function createTransactionOrder(req, res) {
   ) {
     return res.status(400).json({
       error:
-        "merchantId, orderNo, cardNumberFirst6Last4, channelName, orderAmount, orderCurrency, payerEmail, payerName are required.",
+        "merchantId, orderNo, cardNumberFirst6Last4, channelName, mcc, orderAmount, orderCurrency, payerEmail, payerName are required.",
     });
   }
 
@@ -499,6 +501,11 @@ async function createTransactionOrder(req, res) {
     return res.status(400).json({
       error:
         "cardNumberFirst6Last4 must be 10 digits or masked in first6+last4 format.",
+    });
+  }
+  if (!/^\d{4}$/.test(String(mcc))) {
+    return res.status(400).json({
+      error: "mcc must be exactly 4 digits.",
     });
   }
 
@@ -512,8 +519,8 @@ async function createTransactionOrder(req, res) {
     const result = await query(
       `
         INSERT INTO transaction_orders
-          (merchant_id, order_no, merchant_name, card_number_first6_last4, channel_name, order_amount, order_currency, payer_email, payer_name, payment_status, paid_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          (merchant_id, order_no, merchant_name, card_number_first6_last4, channel_name, mcc, order_amount, order_currency, payer_email, payer_name, payment_status, paid_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         merchantId,
@@ -521,6 +528,7 @@ async function createTransactionOrder(req, res) {
         storedMerchantName,
         normalizedCard,
         channelName,
+        String(mcc),
         orderAmount,
         orderCurrency,
         payerEmail,
@@ -535,6 +543,7 @@ async function createTransactionOrder(req, res) {
       merchantId,
       orderNo,
       merchantName: storedMerchantName,
+      mcc: String(mcc),
       paymentStatus,
     });
   } catch (error) {
@@ -562,6 +571,7 @@ app.get("/api/transaction-orders", async (_req, res) => {
           merchant_name,
           card_number_first6_last4,
           channel_name,
+          mcc,
           order_amount,
           order_currency,
           payer_email,

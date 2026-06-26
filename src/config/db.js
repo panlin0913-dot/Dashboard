@@ -60,6 +60,7 @@ async function initializeDatabase() {
         merchant_name VARCHAR(128) NOT NULL,
         card_number_first6_last4 VARCHAR(16) NOT NULL,
         channel_name VARCHAR(64) NOT NULL,
+        mcc VARCHAR(4) NOT NULL,
         order_amount DECIMAL(18, 2) NOT NULL,
         order_currency CHAR(3) NOT NULL DEFAULT 'CNY',
         payer_email VARCHAR(120) NOT NULL,
@@ -73,6 +74,10 @@ async function initializeDatabase() {
           FOREIGN KEY (merchant_id) REFERENCES merchants (id)
           ON UPDATE CASCADE ON DELETE RESTRICT
       );
+    `);
+    await bootstrapConnection.query(`
+      ALTER TABLE transaction_orders
+      ADD COLUMN IF NOT EXISTS mcc VARCHAR(4) NOT NULL DEFAULT '0000' AFTER channel_name;
     `);
 
     await bootstrapConnection.query(`

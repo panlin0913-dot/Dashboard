@@ -61,6 +61,7 @@ npm run dev
 - 商户名称 `merchant_name`
 - 卡号前六后四 `card_number_first6_last4`
 - 渠道名称 `channel_name`
+- MCC `mcc`
 - 订单金额 `order_amount`
 - 订单币种 `order_currency`
 - 付款人邮箱 `payer_email`
@@ -135,6 +136,7 @@ curl -X POST "http://localhost:3000/api/transaction-orders" \
     "orderNo": "ORD-DEMO-10001",
     "cardNumberFirst6Last4": "6222021234",
     "channelName": "card",
+    "mcc": "5411",
     "orderAmount": 520.88,
     "orderCurrency": "CNY",
     "payerEmail": "alice@example.com",
