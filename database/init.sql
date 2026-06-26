@@ -17,101 +17,84 @@ CREATE TABLE IF NOT EXISTS merchants (
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS orders (
+CREATE TABLE IF NOT EXISTS transaction_orders (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   merchant_id BIGINT UNSIGNED NOT NULL,
-  order_no VARCHAR(64) NOT NULL,
-  amount DECIMAL(18, 2) NOT NULL,
-  currency CHAR(3) NOT NULL DEFAULT 'CNY',
-  order_status ENUM('created', 'paid', 'failed', 'refunded', 'chargeback') NOT NULL DEFAULT 'created',
+  order_no VARCHAR(64) NOT NULL UNIQUE,
+  merchant_name VARCHAR(128) NOT NULL,
+  card_number_first6_last4 VARCHAR(16) NOT NULL,
+  channel_name VARCHAR(64) NOT NULL,
+  order_amount DECIMAL(18, 2) NOT NULL,
+  order_currency CHAR(3) NOT NULL DEFAULT 'CNY',
+  payer_email VARCHAR(120) NOT NULL,
+  payer_name VARCHAR(80) NOT NULL,
+  payment_status ENUM('pending', 'paid', 'failed', 'refunded', 'chargeback') NOT NULL DEFAULT 'pending',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE KEY uk_merchant_order_no (merchant_id, order_no),
-  KEY idx_orders_merchant_created_at (merchant_id, created_at),
-  CONSTRAINT fk_orders_merchant_id
+  paid_at TIMESTAMP NULL DEFAULT NULL,
+  KEY idx_transaction_orders_merchant_created_at (merchant_id, created_at),
+  KEY idx_transaction_orders_payment_status (payment_status),
+  CONSTRAINT fk_transaction_orders_merchant_id
     FOREIGN KEY (merchant_id) REFERENCES merchants (id)
     ON UPDATE CASCADE ON DELETE RESTRICT
 );
 
-CREATE TABLE IF NOT EXISTS transactions (
+CREATE TABLE IF NOT EXISTS order_refunds (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   merchant_id BIGINT UNSIGNED NOT NULL,
-  order_id BIGINT UNSIGNED NOT NULL,
-  transaction_no VARCHAR(64) NOT NULL UNIQUE,
-  amount DECIMAL(18, 2) NOT NULL,
-  currency CHAR(3) NOT NULL DEFAULT 'CNY',
-  channel VARCHAR(32) NOT NULL,
-  status ENUM('success', 'failed', 'pending') NOT NULL DEFAULT 'pending',
-  decline_reason VARCHAR(255) DEFAULT NULL,
-  processed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  KEY idx_transactions_merchant_processed_at (merchant_id, processed_at),
-  KEY idx_transactions_order_id (order_id),
-  CONSTRAINT fk_transactions_merchant_id
-    FOREIGN KEY (merchant_id) REFERENCES merchants (id)
-    ON UPDATE CASCADE ON DELETE RESTRICT,
-  CONSTRAINT fk_transactions_order_id
-    FOREIGN KEY (order_id) REFERENCES orders (id)
-    ON UPDATE CASCADE ON DELETE RESTRICT
-);
-
-CREATE TABLE IF NOT EXISTS refunds (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  merchant_id BIGINT UNSIGNED NOT NULL,
-  transaction_id BIGINT UNSIGNED NOT NULL,
   refund_no VARCHAR(64) NOT NULL UNIQUE,
-  amount DECIMAL(18, 2) NOT NULL,
-  status ENUM('submitted', 'approved', 'rejected', 'completed') NOT NULL DEFAULT 'submitted',
-  reason VARCHAR(255) DEFAULT NULL,
+  original_order_no VARCHAR(64) NOT NULL,
+  refund_currency CHAR(3) NOT NULL DEFAULT 'CNY',
+  refund_amount DECIMAL(18, 2) NOT NULL,
+  refund_status ENUM('submitted', 'processing', 'completed', 'failed') NOT NULL DEFAULT 'submitted',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  completed_at TIMESTAMP NULL DEFAULT NULL,
-  KEY idx_refunds_merchant_created_at (merchant_id, created_at),
-  KEY idx_refunds_transaction_id (transaction_id),
-  CONSTRAINT fk_refunds_merchant_id
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_order_refunds_merchant_created_at (merchant_id, created_at),
+  KEY idx_order_refunds_original_order_no (original_order_no),
+  CONSTRAINT fk_order_refunds_merchant_id
     FOREIGN KEY (merchant_id) REFERENCES merchants (id)
     ON UPDATE CASCADE ON DELETE RESTRICT,
-  CONSTRAINT fk_refunds_transaction_id
-    FOREIGN KEY (transaction_id) REFERENCES transactions (id)
+  CONSTRAINT fk_order_refunds_original_order_no
+    FOREIGN KEY (original_order_no) REFERENCES transaction_orders (order_no)
     ON UPDATE CASCADE ON DELETE RESTRICT
 );
 
-CREATE TABLE IF NOT EXISTS chargebacks (
+CREATE TABLE IF NOT EXISTS order_chargebacks (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   merchant_id BIGINT UNSIGNED NOT NULL,
-  transaction_id BIGINT UNSIGNED NOT NULL,
   chargeback_no VARCHAR(64) NOT NULL UNIQUE,
-  amount DECIMAL(18, 2) NOT NULL,
-  stage ENUM('pre_arbitration', 'arbitration', 'won', 'lost') NOT NULL DEFAULT 'pre_arbitration',
-  reason VARCHAR(255) DEFAULT NULL,
-  opened_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  closed_at TIMESTAMP NULL DEFAULT NULL,
-  KEY idx_chargebacks_merchant_opened_at (merchant_id, opened_at),
-  KEY idx_chargebacks_transaction_id (transaction_id),
-  CONSTRAINT fk_chargebacks_merchant_id
+  original_order_no VARCHAR(64) NOT NULL,
+  chargeback_amount DECIMAL(18, 2) NOT NULL,
+  chargeback_status ENUM('open', 'investigating', 'won', 'lost', 'closed') NOT NULL DEFAULT 'open',
+  chargeback_reason VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_order_chargebacks_merchant_created_at (merchant_id, created_at),
+  KEY idx_order_chargebacks_original_order_no (original_order_no),
+  CONSTRAINT fk_order_chargebacks_merchant_id
     FOREIGN KEY (merchant_id) REFERENCES merchants (id)
     ON UPDATE CASCADE ON DELETE RESTRICT,
-  CONSTRAINT fk_chargebacks_transaction_id
-    FOREIGN KEY (transaction_id) REFERENCES transactions (id)
+  CONSTRAINT fk_order_chargebacks_original_order_no
+    FOREIGN KEY (original_order_no) REFERENCES transaction_orders (order_no)
     ON UPDATE CASCADE ON DELETE RESTRICT
 );
 
-CREATE TABLE IF NOT EXISTS fraud_cases (
+CREATE TABLE IF NOT EXISTS order_fraud_cases (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   merchant_id BIGINT UNSIGNED NOT NULL,
-  transaction_id BIGINT UNSIGNED DEFAULT NULL,
   case_no VARCHAR(64) NOT NULL UNIQUE,
-  risk_score DECIMAL(5, 2) NOT NULL,
-  decision ENUM('review', 'blocked', 'approved') NOT NULL DEFAULT 'review',
-  status ENUM('open', 'confirmed_fraud', 'false_positive', 'closed') NOT NULL DEFAULT 'open',
-  detected_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  closed_at TIMESTAMP NULL DEFAULT NULL,
-  KEY idx_fraud_cases_merchant_detected_at (merchant_id, detected_at),
-  KEY idx_fraud_cases_transaction_id (transaction_id),
-  CONSTRAINT fk_fraud_cases_merchant_id
+  original_order_no VARCHAR(64) NOT NULL,
+  currency CHAR(3) NOT NULL DEFAULT 'CNY',
+  amount DECIMAL(18, 2) NOT NULL,
+  fraud_reason VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_order_fraud_cases_merchant_created_at (merchant_id, created_at),
+  KEY idx_order_fraud_cases_original_order_no (original_order_no),
+  CONSTRAINT fk_order_fraud_cases_merchant_id
     FOREIGN KEY (merchant_id) REFERENCES merchants (id)
     ON UPDATE CASCADE ON DELETE RESTRICT,
-  CONSTRAINT fk_fraud_cases_transaction_id
-    FOREIGN KEY (transaction_id) REFERENCES transactions (id)
-    ON UPDATE CASCADE ON DELETE SET NULL
+  CONSTRAINT fk_order_fraud_cases_original_order_no
+    FOREIGN KEY (original_order_no) REFERENCES transaction_orders (order_no)
+    ON UPDATE CASCADE ON DELETE RESTRICT
 );
 
 INSERT INTO merchants (merchant_code, name, status, risk_level)
@@ -124,62 +107,57 @@ ON DUPLICATE KEY UPDATE
   status = VALUES(status),
   risk_level = VALUES(risk_level);
 
-INSERT INTO orders (merchant_id, order_no, amount, currency, order_status)
-SELECT m.id, 'ORD-M1001-0001', 1280.00, 'CNY', 'paid'
+INSERT INTO transaction_orders
+  (merchant_id, order_no, merchant_name, card_number_first6_last4, channel_name, order_amount, order_currency, payer_email, payer_name, payment_status, paid_at)
+SELECT m.id, 'ORD-M1001-0001', m.name, '6222021234', 'alipay', 1280.00, 'CNY', 'alice@nebula.com', 'Alice', 'paid', CURRENT_TIMESTAMP
 FROM merchants m
 WHERE m.merchant_code = 'M1001'
-ON DUPLICATE KEY UPDATE amount = VALUES(amount), order_status = VALUES(order_status);
-
-INSERT INTO orders (merchant_id, order_no, amount, currency, order_status)
-SELECT m.id, 'ORD-M1001-0002', 880.00, 'CNY', 'paid'
-FROM merchants m
-WHERE m.merchant_code = 'M1001'
-ON DUPLICATE KEY UPDATE amount = VALUES(amount), order_status = VALUES(order_status);
-
-INSERT INTO orders (merchant_id, order_no, amount, currency, order_status)
-SELECT m.id, 'ORD-M1002-0001', 2999.00, 'CNY', 'paid'
-FROM merchants m
-WHERE m.merchant_code = 'M1002'
-ON DUPLICATE KEY UPDATE amount = VALUES(amount), order_status = VALUES(order_status);
-
-INSERT INTO transactions (merchant_id, order_id, transaction_no, amount, currency, channel, status)
-SELECT m.id, o.id, 'TXN-M1001-0001', 1280.00, 'CNY', 'wechat', 'success'
-FROM merchants m
-JOIN orders o ON o.merchant_id = m.id AND o.order_no = 'ORD-M1001-0001'
-WHERE m.merchant_code = 'M1001'
-ON DUPLICATE KEY UPDATE amount = VALUES(amount), status = VALUES(status);
-
-INSERT INTO transactions (merchant_id, order_id, transaction_no, amount, currency, channel, status)
-SELECT m.id, o.id, 'TXN-M1001-0002', 880.00, 'CNY', 'alipay', 'success'
-FROM merchants m
-JOIN orders o ON o.merchant_id = m.id AND o.order_no = 'ORD-M1001-0002'
-WHERE m.merchant_code = 'M1001'
-ON DUPLICATE KEY UPDATE amount = VALUES(amount), status = VALUES(status);
-
-INSERT INTO transactions (merchant_id, order_id, transaction_no, amount, currency, channel, status, decline_reason)
-SELECT m.id, o.id, 'TXN-M1002-0001', 2999.00, 'CNY', 'card', 'failed', 'insufficient_funds'
-FROM merchants m
-JOIN orders o ON o.merchant_id = m.id AND o.order_no = 'ORD-M1002-0001'
-WHERE m.merchant_code = 'M1002'
-ON DUPLICATE KEY UPDATE status = VALUES(status), decline_reason = VALUES(decline_reason);
-
-INSERT INTO refunds (merchant_id, transaction_id, refund_no, amount, status, reason, completed_at)
-SELECT t.merchant_id, t.id, 'RFD-M1001-0001', 200.00, 'completed', 'partial_refund', CURRENT_TIMESTAMP
-FROM transactions t
-WHERE t.transaction_no = 'TXN-M1001-0001'
-ON DUPLICATE KEY UPDATE amount = VALUES(amount), status = VALUES(status);
-
-INSERT INTO chargebacks (merchant_id, transaction_id, chargeback_no, amount, stage, reason)
-SELECT t.merchant_id, t.id, 'CBK-M1001-0001', 100.00, 'pre_arbitration', 'customer_dispute'
-FROM transactions t
-WHERE t.transaction_no = 'TXN-M1001-0002'
-ON DUPLICATE KEY UPDATE amount = VALUES(amount), stage = VALUES(stage);
-
-INSERT INTO fraud_cases (merchant_id, transaction_id, case_no, risk_score, decision, status)
-SELECT t.merchant_id, t.id, 'FRAUD-M1002-0001', 91.50, 'blocked', 'confirmed_fraud'
-FROM transactions t
-WHERE t.transaction_no = 'TXN-M1002-0001'
 ON DUPLICATE KEY UPDATE
-  risk_score = VALUES(risk_score),
-  decision = VALUES(decision),
-  status = VALUES(status);
+  payment_status = VALUES(payment_status),
+  order_amount = VALUES(order_amount);
+
+INSERT INTO transaction_orders
+  (merchant_id, order_no, merchant_name, card_number_first6_last4, channel_name, order_amount, order_currency, payer_email, payer_name, payment_status, paid_at)
+SELECT m.id, 'ORD-M1001-0002', m.name, '6228485678', 'wechat', 880.00, 'CNY', 'bob@nebula.com', 'Bob', 'paid', CURRENT_TIMESTAMP
+FROM merchants m
+WHERE m.merchant_code = 'M1001'
+ON DUPLICATE KEY UPDATE
+  payment_status = VALUES(payment_status),
+  order_amount = VALUES(order_amount);
+
+INSERT INTO transaction_orders
+  (merchant_id, order_no, merchant_name, card_number_first6_last4, channel_name, order_amount, order_currency, payer_email, payer_name, payment_status)
+SELECT m.id, 'ORD-M1002-0001', m.name, '4111111234', 'card', 2999.00, 'CNY', 'carol@atlas.com', 'Carol', 'failed'
+FROM merchants m
+WHERE m.merchant_code = 'M1002'
+ON DUPLICATE KEY UPDATE
+  payment_status = VALUES(payment_status),
+  order_amount = VALUES(order_amount);
+
+INSERT INTO order_refunds
+  (merchant_id, refund_no, original_order_no, refund_currency, refund_amount, refund_status)
+SELECT m.id, 'RFD-M1001-0001', 'ORD-M1001-0001', 'CNY', 200.00, 'completed'
+FROM merchants m
+WHERE m.merchant_code = 'M1001'
+ON DUPLICATE KEY UPDATE
+  refund_amount = VALUES(refund_amount),
+  refund_status = VALUES(refund_status);
+
+INSERT INTO order_chargebacks
+  (merchant_id, chargeback_no, original_order_no, chargeback_amount, chargeback_status, chargeback_reason)
+SELECT m.id, 'CBK-M1001-0001', 'ORD-M1001-0002', 100.00, 'investigating', 'cardholder_dispute'
+FROM merchants m
+WHERE m.merchant_code = 'M1001'
+ON DUPLICATE KEY UPDATE
+  chargeback_amount = VALUES(chargeback_amount),
+  chargeback_status = VALUES(chargeback_status),
+  chargeback_reason = VALUES(chargeback_reason);
+
+INSERT INTO order_fraud_cases
+  (merchant_id, case_no, original_order_no, currency, amount, fraud_reason)
+SELECT m.id, 'FRAUD-M1002-0001', 'ORD-M1002-0001', 'CNY', 2999.00, 'stolen_card_pattern'
+FROM merchants m
+WHERE m.merchant_code = 'M1002'
+ON DUPLICATE KEY UPDATE
+  amount = VALUES(amount),
+  fraud_reason = VALUES(fraud_reason);

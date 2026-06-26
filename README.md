@@ -3,7 +3,7 @@
 支付平台商户健康度看板后端工程（Node.js + Express + MySQL）。
 
 核心目标：
-- 记录每个商户的订单、交易、退款、拒付、欺诈事件
+- 记录每个商户的交易订单、退款、拒付、欺诈事件
 - 聚合平台级和商户级 KPI
 - 计算商户健康分（health score）用于监控风险与经营质量
 
@@ -44,11 +44,40 @@ npm run dev
 ## 2. 数据模型
 
 - `merchants`：商户主数据（状态、风险等级）
-- `orders`：订单
-- `transactions`：交易结果（成功/失败/待处理）
-- `refunds`：退款事件
-- `chargebacks`：拒付事件
-- `fraud_cases`：欺诈事件
+- `transaction_orders`：交易订单主表
+- `order_refunds`：退款事件
+- `order_chargebacks`：拒付事件
+- `order_fraud_cases`：欺诈事件
+
+### 字段要求（已按你的需求落地）
+
+#### 交易订单（`transaction_orders`）
+- 商户名称 `merchant_name`
+- 卡号前六后四 `card_number_first6_last4`
+- 渠道名称 `channel_name`
+- 订单金额 `order_amount`
+- 订单币种 `order_currency`
+- 付款人邮箱 `payer_email`
+- 付款人姓名 `payer_name`
+- 支付状态 `payment_status`
+
+#### 退款（`order_refunds`）
+- 原交易订单号 `original_order_no`
+- 退款币种 `refund_currency`
+- 退款金额 `refund_amount`
+- 退款状态 `refund_status`
+
+#### 拒付（`order_chargebacks`）
+- 原交易订单号 `original_order_no`
+- 拒付金额 `chargeback_amount`
+- 拒付状态 `chargeback_status`
+- 拒付原因 `chargeback_reason`
+
+#### 欺诈（`order_fraud_cases`）
+- 原交易订单号 `original_order_no`
+- 币种 `currency`
+- 金额 `amount`
+- 欺诈原因 `fraud_reason`
 
 ## 3. 核心看板接口
 
@@ -74,24 +103,26 @@ npm run dev
 ## 4. 数据写入接口（模拟上游流水）
 
 - `POST /api/merchants`
-- `POST /api/orders`
-- `POST /api/transactions`
+- `POST /api/transaction-orders`（`POST /api/orders` 为兼容别名）
 - `POST /api/refunds`
 - `POST /api/chargebacks`
 - `POST /api/fraud-cases`
 
-示例：新增交易
+示例：新增交易订单
 
 ```bash
-curl -X POST "http://localhost:3000/api/transactions" \
+curl -X POST "http://localhost:3000/api/transaction-orders" \
   -H "Content-Type: application/json" \
   -d '{
     "merchantId": 1,
-    "orderId": 1,
-    "transactionNo": "TXN-DEMO-10001",
-    "amount": 520.88,
-    "channel": "card",
-    "status": "success"
+    "orderNo": "ORD-DEMO-10001",
+    "cardNumberFirst6Last4": "6222021234",
+    "channelName": "card",
+    "orderAmount": 520.88,
+    "orderCurrency": "CNY",
+    "payerEmail": "alice@example.com",
+    "payerName": "Alice",
+    "paymentStatus": "paid"
   }'
 ```
 
@@ -106,4 +137,4 @@ curl -X POST "http://localhost:3000/api/transactions" \
 - 交易成功率（successRate）
 - 退款率（refundRate）
 - 拒付率（chargebackRate）
-- 确认欺诈率（confirmedFraudRate）
+- 欺诈率（fraudRate）

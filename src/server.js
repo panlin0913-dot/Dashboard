@@ -71,15 +71,31 @@ function calculateHealthScore({
   successRate,
   refundRate,
   chargebackRate,
-  confirmedFraudRate,
+  fraudRate,
 }) {
   const penalty =
     (100 - successRate) * 0.35 +
     refundRate * 0.2 +
     chargebackRate * 1.5 +
-    confirmedFraudRate * 1.8;
+    fraudRate * 1.8;
   const score = Math.max(0, Math.min(100, 100 - penalty));
   return Number(score.toFixed(2));
+}
+
+function normalizeCardFirst6Last4(input) {
+  if (!input || typeof input !== "string") {
+    return null;
+  }
+
+  const compactValue = input.trim().replace(/\s+/g, "");
+  const pureDigitsPattern = /^\d{10}$/;
+  const maskedPattern = /^\d{6}\*{0,6}\d{4}$/;
+
+  if (pureDigitsPattern.test(compactValue) || maskedPattern.test(compactValue)) {
+    return compactValue;
+  }
+
+  return null;
 }
 
 function parseDateRange(req, res) {
@@ -110,28 +126,19 @@ async function getMerchantById(merchantId) {
   return rows[0] || null;
 }
 
-async function getMerchantKpi({ merchantId = null, startDate = null, endDate = null }) {
-  const txParams = [];
-  let txWhere = " WHERE 1=1";
-  if (merchantId) {
-    txWhere += " AND merchant_id = ?";
-    txParams.push(merchantId);
-  }
-  txWhere += buildDateFilter("processed_at", startDate, endDate, txParams);
-  const txRows = await query(
+async function getTransactionOrderByNo(merchantId, orderNo) {
+  const rows = await query(
     `
-      SELECT
-        COUNT(*) AS total_transactions,
-        SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS success_transactions,
-        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed_transactions,
-        COALESCE(SUM(CASE WHEN status = 'success' THEN amount ELSE 0 END), 0) AS gmv
-      FROM transactions
-      ${txWhere}
+      SELECT id, order_no, merchant_id, payment_status
+      FROM transaction_orders
+      WHERE merchant_id = ? AND order_no = ?
     `,
-    txParams,
+    [merchantId, orderNo],
   );
-  const tx = txRows[0];
+  return rows[0] || null;
+}
 
+async function getMerchantKpi({ merchantId = null, startDate = null, endDate = null }) {
   const orderParams = [];
   let orderWhere = " WHERE 1=1";
   if (merchantId) {
@@ -141,15 +148,20 @@ async function getMerchantKpi({ merchantId = null, startDate = null, endDate = n
   orderWhere += buildDateFilter("created_at", startDate, endDate, orderParams);
   const orderRows = await query(
     `
-      SELECT COUNT(*) AS total_orders
-      FROM orders
+      SELECT
+        COUNT(*) AS total_transaction_orders,
+        SUM(CASE WHEN payment_status = 'paid' THEN 1 ELSE 0 END) AS successful_payments,
+        SUM(CASE WHEN payment_status = 'failed' THEN 1 ELSE 0 END) AS failed_payments,
+        COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN order_amount ELSE 0 END), 0) AS gmv
+      FROM transaction_orders
       ${orderWhere}
     `,
     orderParams,
   );
+  const order = orderRows[0];
 
   const refundParams = [];
-  let refundWhere = " WHERE status IN ('approved', 'completed')";
+  let refundWhere = " WHERE refund_status = 'completed'";
   if (merchantId) {
     refundWhere += " AND merchant_id = ?";
     refundParams.push(merchantId);
@@ -159,8 +171,8 @@ async function getMerchantKpi({ merchantId = null, startDate = null, endDate = n
     `
       SELECT
         COUNT(*) AS total_refunds,
-        COALESCE(SUM(amount), 0) AS refund_amount
-      FROM refunds
+        COALESCE(SUM(refund_amount), 0) AS refund_amount
+      FROM order_refunds
       ${refundWhere}
     `,
     refundParams,
@@ -172,13 +184,18 @@ async function getMerchantKpi({ merchantId = null, startDate = null, endDate = n
     chargebackWhere += " AND merchant_id = ?";
     chargebackParams.push(merchantId);
   }
-  chargebackWhere += buildDateFilter("opened_at", startDate, endDate, chargebackParams);
+  chargebackWhere += buildDateFilter(
+    "created_at",
+    startDate,
+    endDate,
+    chargebackParams,
+  );
   const chargebackRows = await query(
     `
       SELECT
         COUNT(*) AS total_chargebacks,
-        COALESCE(SUM(amount), 0) AS chargeback_amount
-      FROM chargebacks
+        COALESCE(SUM(chargeback_amount), 0) AS chargeback_amount
+      FROM order_chargebacks
       ${chargebackWhere}
     `,
     chargebackParams,
@@ -190,43 +207,39 @@ async function getMerchantKpi({ merchantId = null, startDate = null, endDate = n
     fraudWhere += " AND merchant_id = ?";
     fraudParams.push(merchantId);
   }
-  fraudWhere += buildDateFilter("detected_at", startDate, endDate, fraudParams);
+  fraudWhere += buildDateFilter("created_at", startDate, endDate, fraudParams);
   const fraudRows = await query(
     `
-      SELECT COUNT(*) AS confirmed_fraud_cases
-      FROM fraud_cases
+      SELECT COUNT(*) AS fraud_cases
+      FROM order_fraud_cases
       ${fraudWhere}
     `,
     fraudParams,
   );
 
   return {
-    totalOrders: toNumber(orderRows[0].total_orders),
-    totalTransactions: toNumber(tx.total_transactions),
-    successTransactions: toNumber(tx.success_transactions),
-    failedTransactions: toNumber(tx.failed_transactions),
-    gmv: toNumber(tx.gmv),
+    totalTransactionOrders: toNumber(order.total_transaction_orders),
+    successfulPayments: toNumber(order.successful_payments),
+    failedPayments: toNumber(order.failed_payments),
+    gmv: toNumber(order.gmv),
     totalRefunds: toNumber(refundRows[0].total_refunds),
     refundAmount: toNumber(refundRows[0].refund_amount),
     totalChargebacks: toNumber(chargebackRows[0].total_chargebacks),
     chargebackAmount: toNumber(chargebackRows[0].chargeback_amount),
-    confirmedFraudCases: toNumber(fraudRows[0].confirmed_fraud_cases),
+    totalFraudCases: toNumber(fraudRows[0].fraud_cases),
   };
 }
 
 function buildDashboardSummary(kpi) {
-  const successRate = toPercentage(kpi.successTransactions, kpi.totalTransactions);
-  const refundRate = toPercentage(kpi.totalRefunds, kpi.successTransactions);
-  const chargebackRate = toPercentage(kpi.totalChargebacks, kpi.successTransactions);
-  const confirmedFraudRate = toPercentage(
-    kpi.confirmedFraudCases,
-    kpi.totalTransactions,
-  );
+  const successRate = toPercentage(kpi.successfulPayments, kpi.totalTransactionOrders);
+  const refundRate = toPercentage(kpi.totalRefunds, kpi.successfulPayments);
+  const chargebackRate = toPercentage(kpi.totalChargebacks, kpi.successfulPayments);
+  const fraudRate = toPercentage(kpi.totalFraudCases, kpi.totalTransactionOrders);
   const healthScore = calculateHealthScore({
     successRate,
     refundRate,
     chargebackRate,
-    confirmedFraudRate,
+    fraudRate,
   });
 
   return {
@@ -234,26 +247,10 @@ function buildDashboardSummary(kpi) {
     successRate,
     refundRate,
     chargebackRate,
-    confirmedFraudRate,
+    fraudRate,
     healthScore,
     healthLevel: classifyHealth(healthScore),
   };
-}
-
-async function ensureTransactionBelongsToMerchant(merchantId, transactionId) {
-  const rows = await query(
-    "SELECT id FROM transactions WHERE id = ? AND merchant_id = ?",
-    [transactionId, merchantId],
-  );
-  return rows.length > 0;
-}
-
-async function ensureOrderBelongsToMerchant(merchantId, orderId) {
-  const rows = await query("SELECT id FROM orders WHERE id = ? AND merchant_id = ?", [
-    orderId,
-    merchantId,
-  ]);
-  return rows.length > 0;
 }
 
 app.post("/api/merchants", async (req, res) => {
@@ -304,156 +301,163 @@ app.get("/api/merchants", async (_req, res) => {
   }
 });
 
-app.post("/api/orders", async (req, res) => {
+async function createTransactionOrder(req, res) {
   const {
     merchantId,
     orderNo,
-    amount,
-    currency = "CNY",
-    orderStatus = "created",
+    merchantName = null,
+    cardNumberFirst6Last4,
+    channelName,
+    orderAmount,
+    orderCurrency = "CNY",
+    payerEmail,
+    payerName,
+    paymentStatus = "pending",
+    paidAt = null,
   } = req.body;
 
-  if (!merchantId || !orderNo || amount === undefined) {
-    return res
-      .status(400)
-      .json({ error: "merchantId, orderNo, amount are required." });
+  if (
+    !merchantId ||
+    !orderNo ||
+    !cardNumberFirst6Last4 ||
+    !channelName ||
+    orderAmount === undefined ||
+    !orderCurrency ||
+    !payerEmail ||
+    !payerName
+  ) {
+    return res.status(400).json({
+      error:
+        "merchantId, orderNo, cardNumberFirst6Last4, channelName, orderAmount, orderCurrency, payerEmail, payerName are required.",
+    });
+  }
+
+  const normalizedCard = normalizeCardFirst6Last4(cardNumberFirst6Last4);
+  if (!normalizedCard) {
+    return res.status(400).json({
+      error:
+        "cardNumberFirst6Last4 must be 10 digits or masked in first6+last4 format.",
+    });
   }
 
   try {
+    const merchant = await getMerchantById(merchantId);
+    if (!merchant) {
+      return res.status(400).json({ error: "merchantId does not exist." });
+    }
+
+    const storedMerchantName = merchantName || merchant.name;
     const result = await query(
       `
-        INSERT INTO orders (merchant_id, order_no, amount, currency, order_status)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO transaction_orders
+          (merchant_id, order_no, merchant_name, card_number_first6_last4, channel_name, order_amount, order_currency, payer_email, payer_name, payment_status, paid_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
-      [merchantId, orderNo, amount, currency, orderStatus],
+      [
+        merchantId,
+        orderNo,
+        storedMerchantName,
+        normalizedCard,
+        channelName,
+        orderAmount,
+        orderCurrency,
+        payerEmail,
+        payerName,
+        paymentStatus,
+        toSqlDate(paidAt),
+      ],
     );
+
     return res.status(201).json({
       id: result.insertId,
       merchantId,
       orderNo,
+      merchantName: storedMerchantName,
+      paymentStatus,
     });
   } catch (error) {
-    if (error && error.code === "ER_NO_REFERENCED_ROW_2") {
-      return res.status(400).json({ error: "merchantId does not exist." });
-    }
     if (error && error.code === "ER_DUP_ENTRY") {
-      return res.status(409).json({ error: "orderNo already exists for merchant." });
+      return res.status(409).json({ error: "orderNo already exists." });
     }
     if (error && error.code === "ER_TRUNCATED_WRONG_VALUE_FOR_FIELD") {
-      return res.status(400).json({ error: "Invalid orderStatus." });
+      return res.status(400).json({ error: "Invalid paymentStatus." });
     }
-    return res.status(500).json({ error: "Failed to create order." });
+    return res.status(500).json({ error: "Failed to create transaction order." });
   }
-});
+}
 
-app.post("/api/transactions", async (req, res) => {
-  const {
-    merchantId,
-    orderId,
-    transactionNo,
-    amount,
-    currency = "CNY",
-    channel,
-    status = "pending",
-    declineReason = null,
-    processedAt = null,
-  } = req.body;
+app.post("/api/transaction-orders", createTransactionOrder);
+app.post("/api/orders", createTransactionOrder);
 
-  if (!merchantId || !orderId || !transactionNo || amount === undefined || !channel) {
-    return res.status(400).json({
-      error:
-        "merchantId, orderId, transactionNo, amount, channel are required.",
-    });
-  }
-
+app.get("/api/transaction-orders", async (_req, res) => {
   try {
-    const matched = await ensureOrderBelongsToMerchant(merchantId, orderId);
-    if (!matched) {
-      return res
-        .status(400)
-        .json({ error: "orderId does not belong to merchantId." });
-    }
-
-    const result = await query(
+    const rows = await query(
       `
-        INSERT INTO transactions
-        (merchant_id, order_id, transaction_no, amount, currency, channel, status, decline_reason, processed_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP))
+        SELECT
+          id,
+          merchant_id,
+          order_no,
+          merchant_name,
+          card_number_first6_last4,
+          channel_name,
+          order_amount,
+          order_currency,
+          payer_email,
+          payer_name,
+          payment_status,
+          created_at,
+          paid_at
+        FROM transaction_orders
+        ORDER BY id DESC
       `,
-      [
-        merchantId,
-        orderId,
-        transactionNo,
-        amount,
-        currency,
-        channel,
-        status,
-        declineReason,
-        toSqlDate(processedAt),
-      ],
     );
-    return res.status(201).json({
-      id: result.insertId,
-      transactionNo,
-    });
+    return res.json(rows);
   } catch (error) {
-    if (error && error.code === "ER_DUP_ENTRY") {
-      return res.status(409).json({ error: "transactionNo already exists." });
-    }
-    if (error && error.code === "ER_NO_REFERENCED_ROW_2") {
-      return res.status(400).json({ error: "merchantId or orderId does not exist." });
-    }
-    if (error && error.code === "ER_TRUNCATED_WRONG_VALUE_FOR_FIELD") {
-      return res.status(400).json({ error: "Invalid transaction status." });
-    }
-    return res.status(500).json({ error: "Failed to create transaction." });
+    return res.status(500).json({ error: "Failed to fetch transaction orders." });
   }
 });
 
 app.post("/api/refunds", async (req, res) => {
   const {
     merchantId,
-    transactionId,
     refundNo,
-    amount,
-    status = "submitted",
-    reason = null,
-    completedAt = null,
+    originalOrderNo,
+    refundCurrency = "CNY",
+    refundAmount,
+    refundStatus = "submitted",
   } = req.body;
 
-  if (!merchantId || !transactionId || !refundNo || amount === undefined) {
+  if (!merchantId || !refundNo || !originalOrderNo || refundAmount === undefined) {
     return res.status(400).json({
-      error: "merchantId, transactionId, refundNo, amount are required.",
+      error:
+        "merchantId, refundNo, originalOrderNo, refundAmount are required.",
     });
   }
 
   try {
-    const matched = await ensureTransactionBelongsToMerchant(
-      merchantId,
-      transactionId,
-    );
-    if (!matched) {
+    const order = await getTransactionOrderByNo(merchantId, originalOrderNo);
+    if (!order) {
       return res
         .status(400)
-        .json({ error: "transactionId does not belong to merchantId." });
+        .json({ error: "originalOrderNo does not belong to merchantId." });
     }
 
     const result = await query(
       `
-        INSERT INTO refunds
-        (merchant_id, transaction_id, refund_no, amount, status, reason, completed_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO order_refunds
+          (merchant_id, refund_no, original_order_no, refund_currency, refund_amount, refund_status)
+        VALUES (?, ?, ?, ?, ?, ?)
       `,
       [
         merchantId,
-        transactionId,
         refundNo,
-        amount,
-        status,
-        reason,
-        toSqlDate(completedAt),
+        originalOrderNo,
+        refundCurrency,
+        refundAmount,
+        refundStatus,
       ],
     );
+
     return res.status(201).json({
       id: result.insertId,
       refundNo,
@@ -463,7 +467,7 @@ app.post("/api/refunds", async (req, res) => {
       return res.status(409).json({ error: "refundNo already exists." });
     }
     if (error && error.code === "ER_TRUNCATED_WRONG_VALUE_FOR_FIELD") {
-      return res.status(400).json({ error: "Invalid refund status." });
+      return res.status(400).json({ error: "Invalid refundStatus." });
     }
     return res.status(500).json({ error: "Failed to create refund." });
   }
@@ -472,49 +476,50 @@ app.post("/api/refunds", async (req, res) => {
 app.post("/api/chargebacks", async (req, res) => {
   const {
     merchantId,
-    transactionId,
     chargebackNo,
-    amount,
-    stage = "pre_arbitration",
-    reason = null,
-    openedAt = null,
-    closedAt = null,
+    originalOrderNo,
+    chargebackAmount,
+    chargebackStatus = "open",
+    chargebackReason,
   } = req.body;
 
-  if (!merchantId || !transactionId || !chargebackNo || amount === undefined) {
+  if (
+    !merchantId ||
+    !chargebackNo ||
+    !originalOrderNo ||
+    chargebackAmount === undefined ||
+    !chargebackReason
+  ) {
     return res.status(400).json({
-      error: "merchantId, transactionId, chargebackNo, amount are required.",
+      error:
+        "merchantId, chargebackNo, originalOrderNo, chargebackAmount, chargebackReason are required.",
     });
   }
 
   try {
-    const matched = await ensureTransactionBelongsToMerchant(
-      merchantId,
-      transactionId,
-    );
-    if (!matched) {
+    const order = await getTransactionOrderByNo(merchantId, originalOrderNo);
+    if (!order) {
       return res
         .status(400)
-        .json({ error: "transactionId does not belong to merchantId." });
+        .json({ error: "originalOrderNo does not belong to merchantId." });
     }
 
     const result = await query(
       `
-        INSERT INTO chargebacks
-        (merchant_id, transaction_id, chargeback_no, amount, stage, reason, opened_at, closed_at)
-        VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP), ?)
+        INSERT INTO order_chargebacks
+          (merchant_id, chargeback_no, original_order_no, chargeback_amount, chargeback_status, chargeback_reason)
+        VALUES (?, ?, ?, ?, ?, ?)
       `,
       [
         merchantId,
-        transactionId,
         chargebackNo,
-        amount,
-        stage,
-        reason,
-        toSqlDate(openedAt),
-        toSqlDate(closedAt),
+        originalOrderNo,
+        chargebackAmount,
+        chargebackStatus,
+        chargebackReason,
       ],
     );
+
     return res.status(201).json({
       id: result.insertId,
       chargebackNo,
@@ -524,7 +529,7 @@ app.post("/api/chargebacks", async (req, res) => {
       return res.status(409).json({ error: "chargebackNo already exists." });
     }
     if (error && error.code === "ER_TRUNCATED_WRONG_VALUE_FOR_FIELD") {
-      return res.status(400).json({ error: "Invalid chargeback stage." });
+      return res.status(400).json({ error: "Invalid chargebackStatus." });
     }
     return res.status(500).json({ error: "Failed to create chargeback." });
   }
@@ -533,51 +538,50 @@ app.post("/api/chargebacks", async (req, res) => {
 app.post("/api/fraud-cases", async (req, res) => {
   const {
     merchantId,
-    transactionId = null,
     caseNo,
-    riskScore,
-    decision = "review",
-    status = "open",
-    detectedAt = null,
-    closedAt = null,
+    originalOrderNo,
+    currency = "CNY",
+    amount,
+    fraudReason,
   } = req.body;
 
-  if (!merchantId || !caseNo || riskScore === undefined) {
-    return res
-      .status(400)
-      .json({ error: "merchantId, caseNo, riskScore are required." });
+  if (
+    !merchantId ||
+    !caseNo ||
+    !originalOrderNo ||
+    amount === undefined ||
+    !fraudReason
+  ) {
+    return res.status(400).json({
+      error:
+        "merchantId, caseNo, originalOrderNo, currency, amount, fraudReason are required.",
+    });
   }
 
   try {
-    if (transactionId) {
-      const matched = await ensureTransactionBelongsToMerchant(
-        merchantId,
-        transactionId,
-      );
-      if (!matched) {
-        return res
-          .status(400)
-          .json({ error: "transactionId does not belong to merchantId." });
-      }
+    const order = await getTransactionOrderByNo(merchantId, originalOrderNo);
+    if (!order) {
+      return res
+        .status(400)
+        .json({ error: "originalOrderNo does not belong to merchantId." });
     }
 
     const result = await query(
       `
-        INSERT INTO fraud_cases
-        (merchant_id, transaction_id, case_no, risk_score, decision, status, detected_at, closed_at)
-        VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP), ?)
+        INSERT INTO order_fraud_cases
+          (merchant_id, case_no, original_order_no, currency, amount, fraud_reason)
+        VALUES (?, ?, ?, ?, ?, ?)
       `,
       [
         merchantId,
-        transactionId,
         caseNo,
-        riskScore,
-        decision,
-        status,
-        toSqlDate(detectedAt),
-        toSqlDate(closedAt),
+        originalOrderNo,
+        currency,
+        amount,
+        fraudReason,
       ],
     );
+
     return res.status(201).json({
       id: result.insertId,
       caseNo,
@@ -585,9 +589,6 @@ app.post("/api/fraud-cases", async (req, res) => {
   } catch (error) {
     if (error && error.code === "ER_DUP_ENTRY") {
       return res.status(409).json({ error: "caseNo already exists." });
-    }
-    if (error && error.code === "ER_TRUNCATED_WRONG_VALUE_FOR_FIELD") {
-      return res.status(400).json({ error: "Invalid fraud decision or status." });
     }
     return res.status(500).json({ error: "Failed to create fraud case." });
   }
@@ -610,9 +611,9 @@ app.get("/api/dashboard/platform", async (req, res) => {
       `,
     );
     const transactingParams = [];
-    let transactingWhere = " WHERE status = 'success'";
+    let transactingWhere = " WHERE payment_status = 'paid'";
     transactingWhere += buildDateFilter(
-      "processed_at",
+      "created_at",
       range.startDate,
       range.endDate,
       transactingParams,
@@ -620,7 +621,7 @@ app.get("/api/dashboard/platform", async (req, res) => {
     const transactingRows = await query(
       `
         SELECT COUNT(DISTINCT merchant_id) AS transacting_merchants
-        FROM transactions
+        FROM transaction_orders
         ${transactingWhere}
       `,
       transactingParams,

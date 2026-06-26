@@ -33,10 +33,14 @@ async function initializeDatabase() {
     port: Number(MYSQL_PORT),
     user: MYSQL_USER,
     password: MYSQL_PASSWORD,
-    database: MYSQL_DATABASE,
   });
 
   try {
+    await bootstrapConnection.query(
+      `CREATE DATABASE IF NOT EXISTS \`${MYSQL_DATABASE}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`,
+    );
+    await bootstrapConnection.query(`USE \`${MYSQL_DATABASE}\`;`);
+
     await bootstrapConnection.query(`
       CREATE TABLE IF NOT EXISTS merchants (
         id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -47,106 +51,92 @@ async function initializeDatabase() {
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
     `);
+
     await bootstrapConnection.query(`
-      CREATE TABLE IF NOT EXISTS orders (
+      CREATE TABLE IF NOT EXISTS transaction_orders (
         id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
         merchant_id BIGINT UNSIGNED NOT NULL,
-        order_no VARCHAR(64) NOT NULL,
-        amount DECIMAL(18, 2) NOT NULL,
-        currency CHAR(3) NOT NULL DEFAULT 'CNY',
-        order_status ENUM('created', 'paid', 'failed', 'refunded', 'chargeback') NOT NULL DEFAULT 'created',
+        order_no VARCHAR(64) NOT NULL UNIQUE,
+        merchant_name VARCHAR(128) NOT NULL,
+        card_number_first6_last4 VARCHAR(16) NOT NULL,
+        channel_name VARCHAR(64) NOT NULL,
+        order_amount DECIMAL(18, 2) NOT NULL,
+        order_currency CHAR(3) NOT NULL DEFAULT 'CNY',
+        payer_email VARCHAR(120) NOT NULL,
+        payer_name VARCHAR(80) NOT NULL,
+        payment_status ENUM('pending', 'paid', 'failed', 'refunded', 'chargeback') NOT NULL DEFAULT 'pending',
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE KEY uk_merchant_order_no (merchant_id, order_no),
-        KEY idx_orders_merchant_created_at (merchant_id, created_at),
-        CONSTRAINT fk_orders_merchant_id
+        paid_at TIMESTAMP NULL DEFAULT NULL,
+        KEY idx_transaction_orders_merchant_created_at (merchant_id, created_at),
+        KEY idx_transaction_orders_payment_status (payment_status),
+        CONSTRAINT fk_transaction_orders_merchant_id
           FOREIGN KEY (merchant_id) REFERENCES merchants (id)
           ON UPDATE CASCADE ON DELETE RESTRICT
       );
     `);
+
     await bootstrapConnection.query(`
-      CREATE TABLE IF NOT EXISTS transactions (
+      CREATE TABLE IF NOT EXISTS order_refunds (
         id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
         merchant_id BIGINT UNSIGNED NOT NULL,
-        order_id BIGINT UNSIGNED NOT NULL,
-        transaction_no VARCHAR(64) NOT NULL UNIQUE,
-        amount DECIMAL(18, 2) NOT NULL,
-        currency CHAR(3) NOT NULL DEFAULT 'CNY',
-        channel VARCHAR(32) NOT NULL,
-        status ENUM('success', 'failed', 'pending') NOT NULL DEFAULT 'pending',
-        decline_reason VARCHAR(255) DEFAULT NULL,
-        processed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        KEY idx_transactions_merchant_processed_at (merchant_id, processed_at),
-        KEY idx_transactions_order_id (order_id),
-        CONSTRAINT fk_transactions_merchant_id
-          FOREIGN KEY (merchant_id) REFERENCES merchants (id)
-          ON UPDATE CASCADE ON DELETE RESTRICT,
-        CONSTRAINT fk_transactions_order_id
-          FOREIGN KEY (order_id) REFERENCES orders (id)
-          ON UPDATE CASCADE ON DELETE RESTRICT
-      );
-    `);
-    await bootstrapConnection.query(`
-      CREATE TABLE IF NOT EXISTS refunds (
-        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-        merchant_id BIGINT UNSIGNED NOT NULL,
-        transaction_id BIGINT UNSIGNED NOT NULL,
         refund_no VARCHAR(64) NOT NULL UNIQUE,
-        amount DECIMAL(18, 2) NOT NULL,
-        status ENUM('submitted', 'approved', 'rejected', 'completed') NOT NULL DEFAULT 'submitted',
-        reason VARCHAR(255) DEFAULT NULL,
+        original_order_no VARCHAR(64) NOT NULL,
+        refund_currency CHAR(3) NOT NULL DEFAULT 'CNY',
+        refund_amount DECIMAL(18, 2) NOT NULL,
+        refund_status ENUM('submitted', 'processing', 'completed', 'failed') NOT NULL DEFAULT 'submitted',
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        completed_at TIMESTAMP NULL DEFAULT NULL,
-        KEY idx_refunds_merchant_created_at (merchant_id, created_at),
-        KEY idx_refunds_transaction_id (transaction_id),
-        CONSTRAINT fk_refunds_merchant_id
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        KEY idx_order_refunds_merchant_created_at (merchant_id, created_at),
+        KEY idx_order_refunds_original_order_no (original_order_no),
+        CONSTRAINT fk_order_refunds_merchant_id
           FOREIGN KEY (merchant_id) REFERENCES merchants (id)
           ON UPDATE CASCADE ON DELETE RESTRICT,
-        CONSTRAINT fk_refunds_transaction_id
-          FOREIGN KEY (transaction_id) REFERENCES transactions (id)
+        CONSTRAINT fk_order_refunds_original_order_no
+          FOREIGN KEY (original_order_no) REFERENCES transaction_orders (order_no)
           ON UPDATE CASCADE ON DELETE RESTRICT
       );
     `);
+
     await bootstrapConnection.query(`
-      CREATE TABLE IF NOT EXISTS chargebacks (
+      CREATE TABLE IF NOT EXISTS order_chargebacks (
         id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
         merchant_id BIGINT UNSIGNED NOT NULL,
-        transaction_id BIGINT UNSIGNED NOT NULL,
         chargeback_no VARCHAR(64) NOT NULL UNIQUE,
-        amount DECIMAL(18, 2) NOT NULL,
-        stage ENUM('pre_arbitration', 'arbitration', 'won', 'lost') NOT NULL DEFAULT 'pre_arbitration',
-        reason VARCHAR(255) DEFAULT NULL,
-        opened_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        closed_at TIMESTAMP NULL DEFAULT NULL,
-        KEY idx_chargebacks_merchant_opened_at (merchant_id, opened_at),
-        KEY idx_chargebacks_transaction_id (transaction_id),
-        CONSTRAINT fk_chargebacks_merchant_id
+        original_order_no VARCHAR(64) NOT NULL,
+        chargeback_amount DECIMAL(18, 2) NOT NULL,
+        chargeback_status ENUM('open', 'investigating', 'won', 'lost', 'closed') NOT NULL DEFAULT 'open',
+        chargeback_reason VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        KEY idx_order_chargebacks_merchant_created_at (merchant_id, created_at),
+        KEY idx_order_chargebacks_original_order_no (original_order_no),
+        CONSTRAINT fk_order_chargebacks_merchant_id
           FOREIGN KEY (merchant_id) REFERENCES merchants (id)
           ON UPDATE CASCADE ON DELETE RESTRICT,
-        CONSTRAINT fk_chargebacks_transaction_id
-          FOREIGN KEY (transaction_id) REFERENCES transactions (id)
+        CONSTRAINT fk_order_chargebacks_original_order_no
+          FOREIGN KEY (original_order_no) REFERENCES transaction_orders (order_no)
           ON UPDATE CASCADE ON DELETE RESTRICT
       );
     `);
+
     await bootstrapConnection.query(`
-      CREATE TABLE IF NOT EXISTS fraud_cases (
+      CREATE TABLE IF NOT EXISTS order_fraud_cases (
         id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
         merchant_id BIGINT UNSIGNED NOT NULL,
-        transaction_id BIGINT UNSIGNED DEFAULT NULL,
         case_no VARCHAR(64) NOT NULL UNIQUE,
-        risk_score DECIMAL(5, 2) NOT NULL,
-        decision ENUM('review', 'blocked', 'approved') NOT NULL DEFAULT 'review',
-        status ENUM('open', 'confirmed_fraud', 'false_positive', 'closed') NOT NULL DEFAULT 'open',
-        detected_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        closed_at TIMESTAMP NULL DEFAULT NULL,
-        KEY idx_fraud_cases_merchant_detected_at (merchant_id, detected_at),
-        KEY idx_fraud_cases_transaction_id (transaction_id),
-        CONSTRAINT fk_fraud_cases_merchant_id
+        original_order_no VARCHAR(64) NOT NULL,
+        currency CHAR(3) NOT NULL DEFAULT 'CNY',
+        amount DECIMAL(18, 2) NOT NULL,
+        fraud_reason VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        KEY idx_order_fraud_cases_merchant_created_at (merchant_id, created_at),
+        KEY idx_order_fraud_cases_original_order_no (original_order_no),
+        CONSTRAINT fk_order_fraud_cases_merchant_id
           FOREIGN KEY (merchant_id) REFERENCES merchants (id)
           ON UPDATE CASCADE ON DELETE RESTRICT,
-        CONSTRAINT fk_fraud_cases_transaction_id
-          FOREIGN KEY (transaction_id) REFERENCES transactions (id)
-          ON UPDATE CASCADE ON DELETE SET NULL
+        CONSTRAINT fk_order_fraud_cases_original_order_no
+          FOREIGN KEY (original_order_no) REFERENCES transaction_orders (order_no)
+          ON UPDATE CASCADE ON DELETE RESTRICT
       );
     `);
   } finally {
