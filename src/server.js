@@ -1,5 +1,6 @@
 require("dotenv").config();
 
+const path = require("path");
 const express = require("express");
 const { initializeDatabase, query } = require("./config/db");
 
@@ -7,6 +8,7 @@ const app = express();
 const port = Number(process.env.PORT || 3000);
 
 app.use(express.json());
+app.use("/static", express.static(path.join(__dirname, "../public")));
 
 app.get("/", (_req, res) => {
   res.json({
@@ -18,6 +20,10 @@ app.get("/health", (_req, res) => {
   res.json({
     status: "ok",
   });
+});
+
+app.get("/dashboard", (_req, res) => {
+  res.sendFile(path.join(__dirname, "../public/dashboard.html"));
 });
 
 function toSqlDate(input) {

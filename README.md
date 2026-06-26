@@ -41,6 +41,10 @@ cp .env.example .env
 npm run dev
 ```
 
+打开可视化页面：
+
+`http://localhost:3000/dashboard`
+
 ## 2. 数据模型
 
 - `merchants`：商户主数据（状态、风险等级）
@@ -100,7 +104,18 @@ npm run dev
 
 `GET /api/dashboard/merchants/:merchantId?startDate=2026-06-01&endDate=2026-06-30`
 
-## 4. 数据写入接口（模拟上游流水）
+## 4. 前端可视化看板
+
+访问：`GET /dashboard`
+
+页面包含：
+- 平台总览（商户覆盖、订单量、成功率、GMV、退款率、拒付率、欺诈率、平台健康分）
+- 商户排行（按健康分从低到高）
+- 风险预警（根据健康分、退款率、拒付率、欺诈率、成功率自动触发）
+
+支持时间筛选（开始/结束日期）与手动刷新。
+
+## 5. 数据写入接口（模拟上游流水）
 
 - `POST /api/merchants`
 - `POST /api/transaction-orders`（`POST /api/orders` 为兼容别名）
@@ -126,7 +141,7 @@ curl -X POST "http://localhost:3000/api/transaction-orders" \
   }'
 ```
 
-## 5. 健康分说明
+## 6. 健康分说明
 
 接口返回 `healthScore`（0-100）和 `healthLevel`：
 - `healthy`：>= 85
