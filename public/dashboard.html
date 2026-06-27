@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>支付平台商户健康度看板</title>
+    <link rel="stylesheet" href="/static/dashboard.css" />
+  </head>
+  <body>
+    <div class="page">
+      <header class="header">
+        <div>
+          <h1>支付平台商户健康度看板</h1>
+          <p>平台总览 + 商户排行 + 风险预警</p>
+        </div>
+        <div class="actions">
+          <button id="refreshBtn" type="button">刷新数据</button>
+        </div>
+      </header>
+
+      <section class="filters card">
+        <div class="field">
+          <label for="startDate">开始时间</label>
+          <input id="startDate" type="date" />
+        </div>
+        <div class="field">
+          <label for="endDate">结束时间</label>
+          <input id="endDate" type="date" />
+        </div>
+        <div class="field field-button">
+          <button id="applyFilterBtn" type="button">应用筛选</button>
+        </div>
+      </section>
+
+      <section class="overview-grid" id="overviewGrid">
+        <article class="metric card">
+          <h3>总商户</h3>
+          <p id="metricTotalMerchants">-</p>
+        </article>
+        <article class="metric card">
+          <h3>活跃商户</h3>
+          <p id="metricActiveMerchants">-</p>
+        </article>
+        <article class="metric card">
+          <h3>有支付商户</h3>
+          <p id="metricTransactingMerchants">-</p>
+        </article>
+        <article class="metric card">
+          <h3>交易订单总数</h3>
+          <p id="metricOrders">-</p>
+        </article>
+        <article class="metric card">
+          <h3>支付成功率</h3>
+          <p id="metricSuccessRate">-</p>
+        </article>
+        <article class="metric card">
+          <h3>GMV</h3>
+          <p id="metricGmv">-</p>
+        </article>
+        <article class="metric card">
+          <h3>退款率</h3>
+          <p id="metricRefundRate">-</p>
+        </article>
+        <article class="metric card">
+          <h3>拒付率</h3>
+          <p id="metricChargebackRate">-</p>
+        </article>
+        <article class="metric card">
+          <h3>欺诈率</h3>
+          <p id="metricFraudRate">-</p>
+        </article>
+        <article class="metric card health">
+          <h3>平台健康分</h3>
+          <p id="metricHealthScore">-</p>
+          <span id="metricHealthLevel" class="tag">-</span>
+        </article>
+      </section>
+
+      <section class="content-grid">
+        <article class="card">
+          <div class="section-title">
+            <h2>商户健康排行</h2>
+            <small>按健康分从低到高排序（风险优先）</small>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>排名</th>
+                  <th>商户</th>
+                  <th>状态</th>
+                  <th>健康分</th>
+                  <th>成功率</th>
+                  <th>退款率</th>
+                  <th>拒付率</th>
+                  <th>欺诈率</th>
+                  <th>GMV</th>
+                </tr>
+              </thead>
+              <tbody id="merchantRankingBody"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="section-title">
+            <h2>风险预警</h2>
+            <small>自动识别高风险商户</small>
+          </div>
+          <ul id="riskAlertsList" class="alerts"></ul>
+        </article>
+      </section>
+    </div>
+
+    <template id="emptyRowTemplate">
+      <tr>
+        <td colspan="9" class="empty">暂无数据</td>
+      </tr>
+    </template>
+
+    <template id="emptyAlertTemplate">
+      <li class="empty">暂无风险预警</li>
+    </template>
+
+    <script src="/static/dashboard.js"></script>
+  </body>
+</html>
