@@ -1,0 +1,3 @@
+sql/demo_payments_backup*.sql
+*.log
+__pycache__/

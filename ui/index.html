@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Payment Monitor Demo</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-badge">P</div>
+        <div>
+          <p class="brand-title">Pay Monitor</p>
+          <p class="brand-subtitle">Demo Console</p>
+        </div>
+      </div>
+      <nav class="menu">
+        <button class="menu-item active" data-tab="platform">平台总览</button>
+        <button class="menu-item" data-tab="merchant">商户监控</button>
+      </nav>
+    </aside>
+
+    <main class="content">
+      <header class="topbar">
+        <h1>支付风控监控</h1>
+        <div class="controls">
+          <span class="fixed-period">周期：最近6个月</span>
+          <label id="merchantFilterWrap" class="hidden">
+            商户
+            <select id="merchantSelect"></select>
+          </label>
+          <span id="merchantAlert" class="merchant-alert hidden"></span>
+          <button id="logoutBtn" class="secondary-btn" type="button">退出登录</button>
+        </div>
+      </header>
+      <div id="statusBar" class="status-bar">正在加载数据...</div>
+
+      <section id="platformTab" class="tab-panel active">
+        <div class="card-grid" id="platformCards"></div>
+        <section class="panel">
+          <div class="panel-head">
+            <h2>平台趋势</h2>
+            <p>交易笔数、交易量与风险率走势</p>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>周期</th>
+                  <th>交易笔数</th>
+                  <th>交易量</th>
+                  <th>退款金额</th>
+                  <th>退款笔数</th>
+                  <th>退款率(by笔数)</th>
+                  <th>拒付金额</th>
+                  <th>拒付笔数</th>
+                  <th>拒付率(by笔数)</th>
+                  <th>欺诈金额</th>
+                  <th>欺诈笔数</th>
+                  <th>欺诈率(by笔数)</th>
+                </tr>
+              </thead>
+              <tbody id="platformTableBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section id="merchantTab" class="tab-panel">
+        <div id="merchantMeta" class="merchant-meta"></div>
+        <div class="card-grid" id="merchantCards"></div>
+        <section class="panel">
+          <div class="panel-head">
+            <h2>商户走势</h2>
+            <p>按选中商户查看对应指标</p>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>周期</th>
+                  <th>交易笔数</th>
+                  <th>交易量</th>
+                  <th>退款金额</th>
+                  <th>退款笔数</th>
+                  <th>退款率(by笔数)</th>
+                  <th>拒付金额</th>
+                  <th>拒付笔数</th>
+                  <th>拒付率(by笔数)</th>
+                  <th>欺诈金额</th>
+                  <th>欺诈笔数</th>
+                  <th>欺诈率(by笔数)</th>
+                </tr>
+              </thead>
+              <tbody id="merchantTableBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section id="detailPanel" class="panel hidden">
+        <div class="panel-head detail-head">
+          <h2 id="detailTitle">明细</h2>
+          <button id="detailCloseBtn" class="secondary-btn" type="button">关闭</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>商户号</th>
+                <th>订单号</th>
+                <th>MCC</th>
+                <th>币种</th>
+                <th>金额</th>
+                <th>状态/原因</th>
+                <th>时间</th>
+              </tr>
+            </thead>
+            <tbody id="detailTableBody"></tbody>
+          </table>
+        </div>
+        <div class="detail-pager">
+          <button id="detailPrevBtn" class="secondary-btn" type="button">上一页</button>
+          <span id="detailPageInfo">第 1 / 1 页</span>
+          <button id="detailNextBtn" class="secondary-btn" type="button">下一页</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>

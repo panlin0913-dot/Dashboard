@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pay Monitor Login</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body class="login-body">
+  <main class="login-page">
+    <section class="login-panel">
+      <div class="login-brand">
+        <div class="brand-badge">P</div>
+        <div>
+          <p class="brand-title">Pay Monitor</p>
+          <p class="brand-subtitle">Demo Console Login</p>
+        </div>
+      </div>
+
+      <h1 class="login-title">登录监控平台</h1>
+      <p class="login-desc">查看平台和商户的交易与风险指标。</p>
+
+      <form id="loginForm" class="login-form">
+        <label class="field">
+          用户名
+          <input id="usernameInput" type="text" autocomplete="username" placeholder="请输入用户名" required />
+        </label>
+        <label class="field">
+          密码
+          <input id="passwordInput" type="password" autocomplete="current-password" placeholder="请输入密码" required />
+        </label>
+        <button type="submit" class="primary-btn">登录</button>
+      </form>
+
+      <p id="loginMessage" class="login-message">演示账号：`admin`，密码：`PayDemo@2026`</p>
+    </section>
+  </main>
+
+  <script src="./login.js"></script>
+</body>
+</html>
