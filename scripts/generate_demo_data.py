@@ -14,7 +14,7 @@ MCC_POOL = [
     "7399",  # Business Services
 ]
 
-CURRENCY_POOL = ["USD", "EUR", "GBP", "SGD", "HKD"]
+CURRENCY_POOL = ["USD"]
 
 CHARGEBACK_REASONS = [
     "FRAUD_CARD_NOT_PRESENT",

@@ -448,7 +448,7 @@ BEGIN
     SELECT
       r.merchant_id,
       CONCAT('ORD', v_ym, SUBSTRING(r.merchant_id, 2), LPAD(r.seq_no, 8, '0')) AS order_id,
-      'HKD' AS currency,
+      'USD' AS currency,
       r.raw_amt AS amount,
       r.mcc AS mcc,
       'SUCCESS' AS payment_status,
@@ -506,7 +506,7 @@ BEGIN
     )
     SELECT
       CONCAT('ORD', v_ym, SUBSTRING(r.merchant_id, 2), LPAD(r.seq_no, 8, '0')) AS original_order_id,
-      'HKD' AS refund_currency,
+      'USD' AS refund_currency,
       GREATEST(29, LEAST(200, r.raw_amt + a.adj_base + IF(r.seq_no <= a.adj_rem, a.adj_sign, 0))) AS refund_amount,
       'SUCCESS' AS refund_status,
       DATE_ADD(
@@ -564,7 +564,7 @@ BEGIN
       CONCAT('ORD', v_ym, SUBSTRING(r.merchant_id, 2), LPAD((r.tx_count - r.seq_no + 1), 8, '0')) AS original_order_id,
       r.merchant_id AS merchant_id,
       r.mcc AS mcc,
-      'HKD' AS chargeback_currency,
+      'USD' AS chargeback_currency,
       GREATEST(29, LEAST(200, r.raw_amt + a.adj_base + IF(r.seq_no <= a.adj_rem, a.adj_sign, 0))) AS chargeback_amount,
       ELT(
         MOD(r.seq_no - 1, 5) + 1,
@@ -629,7 +629,7 @@ BEGIN
       CONCAT('ORD', v_ym, SUBSTRING(r.merchant_id, 2), LPAD((MOD((r.seq_no - 1) * 7, r.tx_count) + 1), 8, '0')) AS original_order_id,
       r.merchant_id AS merchant_id,
       r.mcc AS mcc,
-      'HKD' AS currency,
+      'USD' AS currency,
       GREATEST(29, LEAST(200, r.raw_amt + a.adj_base + IF(r.seq_no <= a.adj_rem, a.adj_sign, 0))) AS amount,
       DATE_ADD(
         v_month_start,

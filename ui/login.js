@@ -1,5 +1,5 @@
 const DEMO_USER = "admin";
-const DEMO_PASS = "PayDemo@2026";
+const DEMO_PASS = "admin123";
 const AUTH_KEY = "pay_monitor_auth";
 
 function setMessage(text, isError = false) {

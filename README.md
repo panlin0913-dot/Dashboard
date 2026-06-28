@@ -11,6 +11,7 @@ It supports both:
 
 - Platform-wide daily/monthly monitoring
 - Per-merchant daily/monthly monitoring
+- Unified currency: USD for transactions/refunds/chargebacks/fraud
 
 ## 1) Create schema
 
@@ -201,31 +202,31 @@ UNION ALL
 SELECT 'fraud', SUM(CASE WHEN amt = l1 AND amt = l2 THEN 1 ELSE 0 END) FROM fd;
 ```
 
-## 6) Run UI with real MySQL data (no Node/Python required)
+## 6) Run UI with real MySQL data (Python)
 
 Start local API + static UI server:
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\server\serve.ps1
+```bash
+python server/serve.py
 ```
 
 Open browser:
 
-- `http://localhost:8790`（登录页）
-- `http://localhost:8790/dashboard`（看板页，需先登录）
+- `http://localhost:8788`（登录页）
+- `http://localhost:8788/dashboard`（看板页，需先登录）
 
 Demo login account:
 
 - Username: `admin`
-- Password: `PayDemo@2026`
+- Password: `admin123`
 
 Optional custom DB connection:
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\server\serve.ps1 `
-  -MySqlHost 127.0.0.1 `
-  -MySqlPort 3306 `
-  -MySqlUser root `
-  -MySqlPassword Rm200509 `
-  -Database demo_payments
+```bash
+python server/serve.py \
+  --mysql-host 127.0.0.1 \
+  --mysql-port 3306 \
+  --mysql-user root \
+  --mysql-password Rm200509 \
+  --database demo_payments
 ```
